@@ -3072,7 +3072,25 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 		}
 	}
 
-	return r.accountsToService(ctx, accounts)
+	result, err := r.accountsToService(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	if groupPrefersLowestRateAccount(result, groupID) {
+		service.ApplyLowestRateSchedulingPreference(result)
+	}
+	return result, nil
+}
+
+func groupPrefersLowestRateAccount(accounts []service.Account, groupID int64) bool {
+	for i := range accounts {
+		for _, accountGroup := range accounts[i].AccountGroups {
+			if accountGroup.GroupID == groupID && accountGroup.Group != nil {
+				return accountGroup.Group.PreferLowestRateAccount
+			}
+		}
+	}
+	return false
 }
 
 func (r *accountRepository) accountsToService(ctx context.Context, accounts []*dbent.Account) ([]service.Account, error) {

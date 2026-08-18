@@ -21,6 +21,9 @@ type Group struct {
 	Description    string
 	Platform       string
 	RateMultiplier float64
+	// PreferLowestRateAccount makes account billing multiplier the primary
+	// scheduling key for this group while preserving existing tie-breakers.
+	PreferLowestRateAccount bool
 	// 高峰时段倍率：peak_rate_enabled 为 true 且当前时刻处于 [PeakStart, PeakEnd) 时，
 	// token 计费倍率额外乘以 PeakRateMultiplier。详见 PeakMultiplierAt。
 	PeakRateEnabled    bool

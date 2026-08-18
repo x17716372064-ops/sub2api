@@ -85,6 +85,11 @@ func RateMultiplier(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRateMultiplier, v))
 }
 
+// PreferLowestRateAccount applies equality check predicate on the "prefer_lowest_rate_account" field. It's identical to PreferLowestRateAccountEQ.
+func PreferLowestRateAccount(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPreferLowestRateAccount, v))
+}
+
 // PeakRateEnabled applies equality check predicate on the "peak_rate_enabled" field. It's identical to PeakRateEnabledEQ.
 func PeakRateEnabled(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPeakRateEnabled, v))
@@ -638,6 +643,16 @@ func RateMultiplierLT(v float64) predicate.Group {
 // RateMultiplierLTE applies the LTE predicate on the "rate_multiplier" field.
 func RateMultiplierLTE(v float64) predicate.Group {
 	return predicate.Group(sql.FieldLTE(FieldRateMultiplier, v))
+}
+
+// PreferLowestRateAccountEQ applies the EQ predicate on the "prefer_lowest_rate_account" field.
+func PreferLowestRateAccountEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPreferLowestRateAccount, v))
+}
+
+// PreferLowestRateAccountNEQ applies the NEQ predicate on the "prefer_lowest_rate_account" field.
+func PreferLowestRateAccountNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldPreferLowestRateAccount, v))
 }
 
 // PeakRateEnabledEQ applies the EQ predicate on the "peak_rate_enabled" field.

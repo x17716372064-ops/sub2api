@@ -794,6 +794,8 @@ export default {
         id: 'ID',
         platform: '平台',
         rateMultiplier: '费率倍数',
+        preferLowestRateAccount: '优先调用倍率最低的账户',
+        preferLowestRateAccountHint: '开启后优先选择账户计费倍率最低的可用账户；倍率相同时沿用原优先级和负载策略',
         rpmOverride: 'RPM 覆盖',
         rpmOverrideHint: '该用户在此分组的 RPM 上限；留空 = 使用分组默认；0 = 不限制',
         rateDefault: '默认',

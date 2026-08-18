@@ -801,6 +801,8 @@ export default {
         id: 'ID',
         platform: 'Platform',
         rateMultiplier: 'Rate Multiplier',
+        preferLowestRateAccount: 'Prefer lowest-rate account',
+        preferLowestRateAccountHint: 'Prefer the available account with the lowest billing multiplier; existing priority and load rules break ties.',
         rpmOverride: 'RPM Override',
         rpmOverrideHint: 'Per-user RPM cap in this group; empty = group default; 0 = unlimited',
         rateDefault: 'default',
