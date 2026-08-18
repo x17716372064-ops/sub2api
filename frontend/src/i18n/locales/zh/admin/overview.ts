@@ -835,6 +835,8 @@ export default {
         descriptionPlaceholder: '请输入描述（可选）',
         rateMultiplierLabel: '费率倍数',
         rateMultiplierHint: '1.0 = 标准费率，0.5 = 半价，2.0 = 双倍',
+        preferLowestRateAccount: '优先调用倍率最低的账户',
+        preferLowestRateAccountHint: '开启后优先选择计费倍率最低的可用账户；倍率相同时沿用原有的账户优先级和负载策略',
         rpmLimit: '每分钟请求数 (RPM)',
         rpmLimitPlaceholder: '0 表示不限制',
         rpmLimitHint: '每用户在本分组每分钟最大请求数，0 = 不限制；一旦设置即接管该用户的限流（覆盖用户级 rpm_limit）',
