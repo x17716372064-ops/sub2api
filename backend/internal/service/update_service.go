@@ -88,7 +88,7 @@ func NewUpdateServiceWithConfig(cache UpdateCache, githubClient GitHubReleaseCli
 	// This remains safe even when an old deployment leaves the official
 	// repository and UPDATE_ALLOW_IN_PLACE=true at their original defaults.
 	isOfficialRepo := strings.EqualFold(strings.TrimSuffix(releaseRepo, "/"), githubRepo)
-	allowInPlace = allowInPlace && buildType != "source" && !(buildType == "custom" && isOfficialRepo)
+	allowInPlace = allowInPlace && buildType != "source" && (buildType != "custom" || !isOfficialRepo)
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
