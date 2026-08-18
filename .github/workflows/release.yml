@@ -28,6 +28,7 @@ permissions:
 jobs:
   # Update VERSION file with tag version
   update-version:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '+custom.') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,6 +53,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '+custom.') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -85,6 +87,7 @@ jobs:
           retention-days: 1
 
   release:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '+custom.') }}
     needs: [update-version, build-frontend]
     runs-on: ubuntu-latest
     steps:
@@ -274,7 +277,7 @@ jobs:
 
   sync-version-file:
     needs: [release]
-    if: ${{ needs.release.result == 'success' }}
+    if: ${{ needs.release.result == 'success' && (github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '+custom.')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout default branch

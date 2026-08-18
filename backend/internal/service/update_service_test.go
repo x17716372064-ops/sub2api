@@ -31,9 +31,11 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
+	latestRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.latestRepo = repo
 	return s.release, nil
 }
 
@@ -67,6 +69,33 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrNoUpdateAvailable))
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
+}
+
+func TestUpdateServiceCustomBuildCanCheckWithoutReplacingBinary(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.178+custom.2"},
+	}
+	svc := NewUpdateServiceWithConfig(
+		&updateServiceCacheStub{},
+		client,
+		"0.1.177+custom.1",
+		"custom",
+		"example/sub2api-custom",
+		false,
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.True(t, info.HasUpdate)
+	require.False(t, info.AutoUpdateAllowed)
+	require.Equal(t, "example/sub2api-custom", info.UpdateRepository)
+	require.Equal(t, "example/sub2api-custom", client.latestRepo)
+	require.ErrorIs(t, svc.PerformUpdate(context.Background()), ErrInPlaceUpdateDisabled)
+}
+
+func TestCompareVersionsSupportsCustomBuildMetadata(t *testing.T) {
+	require.Zero(t, compareVersions("0.1.177+custom.1", "0.1.177"))
+	require.Negative(t, compareVersions("0.1.177+custom.9", "0.1.178+custom.1"))
 }
 
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {

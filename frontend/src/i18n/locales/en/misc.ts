@@ -31,6 +31,8 @@ export default {
     refresh: 'Refresh',
     sourceMode: 'Source Build',
     sourceModeHint: 'Source build, use git pull to update',
+    managedUpdateHint:
+      'This is a custom build. Update through its sync and release workflow to preserve extensions.',
     updateNow: 'Update Now',
     updating: 'Updating...',
     updateComplete: 'Update Complete',
@@ -53,6 +55,8 @@ export default {
     noRollbackVersions: 'No versions available for rollback',
     loadVersionsFailed: 'Failed to load versions',
     rollbackSourceHint: 'Online rollback is not available for source builds',
+    rollbackManagedHint:
+      'Online replacement is disabled for this build. Use its custom release or deployment backup.',
     deployScript: 'Script',
     deployDocker: 'Docker',
     dockerEditCompose: 'Edit the image tag in docker-compose.yml',

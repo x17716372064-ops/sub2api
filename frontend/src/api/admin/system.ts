@@ -18,7 +18,9 @@ export interface VersionInfo {
   release_info?: ReleaseInfo
   cached: boolean
   warning?: string
-  build_type: string // "source" for manual builds, "release" for CI builds
+  build_type: string // "source", "release", or "custom"
+  auto_update_allowed: boolean
+  update_repository: string
 }
 
 /**

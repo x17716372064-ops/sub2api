@@ -1,0 +1,44 @@
+version: 2
+
+project_name: sub2api
+
+builds:
+  - id: sub2api-custom
+    dir: backend
+    main: ./cmd/server
+    binary: sub2api
+    flags:
+      - -tags=embed
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
+      - -X main.BuildType=custom
+
+archives:
+  - id: custom
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+release:
+  draft: false
+  prerelease: false
+  name_template: "Sub2API {{ .Version }} Custom"
+  header: |
+    Custom build rebased on upstream Sub2API with local extensions preserved.

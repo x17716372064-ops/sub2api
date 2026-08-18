@@ -20,11 +20,13 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"golang.org/x/mod/semver"
 )
 
 var (
 	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	ErrInPlaceUpdateDisabled     = infraerrors.Conflict("IN_PLACE_UPDATE_DISABLED", "in-place updates are disabled for this build; use the custom release workflow")
 )
 
 const (
@@ -65,27 +67,45 @@ type UpdateService struct {
 	githubClient   GitHubReleaseClient
 	currentVersion string
 	buildType      string // "source" for manual builds, "release" for CI builds
+	releaseRepo    string
+	allowInPlace   bool
 }
 
 // NewUpdateService creates a new UpdateService
 func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType string) *UpdateService {
+	return NewUpdateServiceWithConfig(cache, githubClient, version, buildType, githubRepo, buildType == "release")
+}
+
+// NewUpdateServiceWithConfig creates an update service for a specific release
+// repository. Custom builds can check for updates without allowing a stock
+// release binary to overwrite their extensions.
+func NewUpdateServiceWithConfig(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType, releaseRepo string, allowInPlace bool) *UpdateService {
+	releaseRepo = strings.TrimSpace(releaseRepo)
+	if releaseRepo == "" {
+		releaseRepo = githubRepo
+	}
+	allowInPlace = allowInPlace && buildType != "source"
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
 		currentVersion: version,
 		buildType:      buildType,
+		releaseRepo:    releaseRepo,
+		allowInPlace:   allowInPlace,
 	}
 }
 
 // UpdateInfo contains update information
 type UpdateInfo struct {
-	CurrentVersion string       `json:"current_version"`
-	LatestVersion  string       `json:"latest_version"`
-	HasUpdate      bool         `json:"has_update"`
-	ReleaseInfo    *ReleaseInfo `json:"release_info,omitempty"`
-	Cached         bool         `json:"cached"`
-	Warning        string       `json:"warning,omitempty"`
-	BuildType      string       `json:"build_type"` // "source" or "release"
+	CurrentVersion    string       `json:"current_version"`
+	LatestVersion     string       `json:"latest_version"`
+	HasUpdate         bool         `json:"has_update"`
+	ReleaseInfo       *ReleaseInfo `json:"release_info,omitempty"`
+	Cached            bool         `json:"cached"`
+	Warning           string       `json:"warning,omitempty"`
+	BuildType         string       `json:"build_type"` // "source", "release", or "custom"
+	AutoUpdateAllowed bool         `json:"auto_update_allowed"`
+	UpdateRepository  string       `json:"update_repository"`
 }
 
 // ReleaseInfo contains GitHub release details
@@ -147,11 +167,13 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 			return cached, nil
 		}
 		return &UpdateInfo{
-			CurrentVersion: s.currentVersion,
-			LatestVersion:  s.currentVersion,
-			HasUpdate:      false,
-			Warning:        err.Error(),
-			BuildType:      s.buildType,
+			CurrentVersion:    s.currentVersion,
+			LatestVersion:     s.currentVersion,
+			HasUpdate:         false,
+			Warning:           err.Error(),
+			BuildType:         s.buildType,
+			AutoUpdateAllowed: s.allowInPlace,
+			UpdateRepository:  s.releaseRepo,
 		}, nil
 	}
 
@@ -163,6 +185,9 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // PerformUpdate downloads and applies the update
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
+	if !s.allowInPlace {
+		return ErrInPlaceUpdateDisabled
+	}
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
 		return err
@@ -327,6 +352,9 @@ func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVer
 // The target must be one of the versions returned by ListRollbackVersions;
 // anything else (including the current version) is rejected.
 func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) error {
+	if !s.allowInPlace {
+		return ErrInPlaceUpdateDisabled
+	}
 	target := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if target == "" {
 		return ErrRollbackVersionNotAllowed
@@ -363,7 +391,7 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 // fetchRollbackCandidates fetches recent releases and keeps the newest
 // maxRollbackVersions entries strictly older than the current version.
 func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
-	releases, err := s.githubClient.FetchRecentReleases(ctx, githubRepo, rollbackFetchPageSize)
+	releases, err := s.githubClient.FetchRecentReleases(ctx, s.releaseRepo, rollbackFetchPageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +428,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
-	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
+	release, err := s.githubClient.FetchLatestRelease(ctx, s.releaseRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -427,8 +455,10 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 			HTMLURL:     release.HTMLURL,
 			Assets:      assets,
 		},
-		Cached:    false,
-		BuildType: s.buildType,
+		Cached:            false,
+		BuildType:         s.buildType,
+		AutoUpdateAllowed: s.allowInPlace,
+		UpdateRepository:  s.releaseRepo,
 	}, nil
 }
 
@@ -602,6 +632,7 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	var cached struct {
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
+		Repository  string       `json:"repository"`
 		Timestamp   int64        `json:"timestamp"`
 	}
 	if err := json.Unmarshal([]byte(data), &cached); err != nil {
@@ -611,14 +642,19 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	if time.Now().Unix()-cached.Timestamp > updateCacheTTL {
 		return nil, fmt.Errorf("cache expired")
 	}
+	if cached.Repository != s.releaseRepo {
+		return nil, fmt.Errorf("cache belongs to a different update repository")
+	}
 
 	return &UpdateInfo{
-		CurrentVersion: s.currentVersion,
-		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
-		ReleaseInfo:    cached.ReleaseInfo,
-		Cached:         true,
-		BuildType:      s.buildType,
+		CurrentVersion:    s.currentVersion,
+		LatestVersion:     cached.Latest,
+		HasUpdate:         compareVersions(s.currentVersion, cached.Latest) < 0,
+		ReleaseInfo:       cached.ReleaseInfo,
+		Cached:            true,
+		BuildType:         s.buildType,
+		AutoUpdateAllowed: s.allowInPlace,
+		UpdateRepository:  s.releaseRepo,
 	}, nil
 }
 
@@ -626,10 +662,12 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 	cacheData := struct {
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
+		Repository  string       `json:"repository"`
 		Timestamp   int64        `json:"timestamp"`
 	}{
 		Latest:      info.LatestVersion,
 		ReleaseInfo: info.ReleaseInfo,
+		Repository:  s.releaseRepo,
 		Timestamp:   time.Now().Unix(),
 	}
 
@@ -639,6 +677,12 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 
 // compareVersions compares two semantic versions
 func compareVersions(current, latest string) int {
+	currentSemver := normalizeSemver(current)
+	latestSemver := normalizeSemver(latest)
+	if semver.IsValid(currentSemver) && semver.IsValid(latestSemver) {
+		return semver.Compare(currentSemver, latestSemver)
+	}
+
 	currentParts := parseVersion(current)
 	latestParts := parseVersion(latest)
 
@@ -651,6 +695,14 @@ func compareVersions(current, latest string) int {
 		}
 	}
 	return 0
+}
+
+func normalizeSemver(version string) string {
+	version = strings.TrimSpace(version)
+	if !strings.HasPrefix(version, "v") {
+		version = "v" + version
+	}
+	return version
 }
 
 func parseVersion(v string) [3]int {

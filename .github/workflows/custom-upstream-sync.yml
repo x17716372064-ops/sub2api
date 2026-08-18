@@ -1,0 +1,81 @@
+name: Custom Upstream Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Create a custom release even when upstream has not changed
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: custom-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout custom branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch upstream main --tags
+          before="$(git rev-parse HEAD)"
+          git merge --no-edit upstream/main
+          after="$(git rev-parse HEAD)"
+          echo "changed=$([ "$before" != "$after" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Verify custom build
+        run: |
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
+          pnpm run build
+          cd ../backend
+          go test ./internal/repository ./internal/service ./internal/handler/admin ./internal/handler/dto
+
+      - name: Push synchronized branch
+        if: ${{ steps.merge.outputs.changed == 'true' }}
+        run: git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Tag custom release
+        if: ${{ steps.merge.outputs.changed == 'true' || inputs.force_release == true }}
+        run: |
+          base="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
+          tag="v${base}+custom.${GITHUB_RUN_NUMBER}"
+          git tag -a "$tag" -m "Custom release based on upstream ${base}"
+          git push origin "$tag"

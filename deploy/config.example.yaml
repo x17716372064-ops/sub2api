@@ -1284,6 +1284,10 @@ update:
   # Leave empty for direct connection (recommended for overseas servers)
   # 留空表示直连（适用于海外服务器）
   proxy_url: ""
+  # GitHub owner/repository used for release checks and binary downloads.
+  repository: "Wei-Shaw/sub2api"
+  # Disable for custom builds unless the repository above publishes custom binaries.
+  allow_in_place: true
 
 # =============================================================================
 # Image Storage (异步图片任务结果对象存储)

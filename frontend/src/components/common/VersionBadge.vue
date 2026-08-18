@@ -32,7 +32,7 @@
           v-if="dropdownOpen"
           ref="dropdownRef"
           class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
-          :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
+          :class="rollbackPanelOpen && autoUpdateAllowed ? 'w-80' : 'w-64'"
         >
           <!-- Header with refresh button -->
           <div
@@ -231,8 +231,8 @@
                 </button>
               </div>
 
-              <!-- Priority 3: Update available for source build - show git pull hint -->
-              <div v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2">
+              <!-- Priority 3: Update available but managed/custom installation is required -->
+              <div v-else-if="hasUpdate && !autoUpdateAllowed" class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
                   :href="releaseInfo.html_url"
@@ -268,7 +268,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 </a>
-                <!-- Source build hint -->
+                <!-- Managed update hint -->
                 <div
                   class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
                 >
@@ -286,13 +286,13 @@
                     />
                   </svg>
                   <p class="text-xs text-blue-600 dark:text-blue-400">
-                    {{ t('version.sourceModeHint') }}
+                    {{ t('version.managedUpdateHint') }}
                   </p>
                 </div>
               </div>
 
-              <!-- Priority 4: Update available for release build - show update button -->
-              <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
+              <!-- Priority 4: Update available for the configured release channel -->
+              <div v-else-if="hasUpdate && autoUpdateAllowed" class="space-y-2">
                 <!-- Update info card -->
                 <div
                   class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
@@ -397,7 +397,7 @@
                     <div v-if="rollbackPanelOpen" class="mt-2 space-y-2">
                       <!-- Source build: online rollback unavailable, use git instead -->
                       <div
-                        v-if="!isReleaseBuild"
+                        v-if="!autoUpdateAllowed"
                         class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
                       >
                         <svg
@@ -414,7 +414,7 @@
                           />
                         </svg>
                         <p class="min-w-0 flex-1 text-xs leading-4 text-blue-600 dark:text-blue-400">
-                          {{ t('version.rollbackSourceHint') }}
+                          {{ t('version.rollbackManagedHint') }}
                         </p>
                       </div>
 
@@ -675,7 +675,7 @@ const currentVersion = computed(() => appStore.currentVersion || props.version |
 const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
-const buildType = computed(() => appStore.buildType)
+const autoUpdateAllowed = computed(() => appStore.autoUpdateAllowed)
 
 // Update process states (local to this component)
 const updating = ref(false)
@@ -727,9 +727,6 @@ const dockerRollbackCommand = computed(() => {
 const activeManualCommand = computed(() =>
   manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
 )
-
-// Only show update check for release builds (binary/docker deployment)
-const isReleaseBuild = computed(() => buildType.value === 'release')
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
@@ -788,7 +785,7 @@ async function toggleRollbackPanel() {
   // Source builds only show a hint, no version list to fetch
   if (
     rollbackPanelOpen.value &&
-    isReleaseBuild.value &&
+    autoUpdateAllowed.value &&
     rollbackVersions.value.length === 0 &&
     !rollbackVersionsLoading.value
   ) {

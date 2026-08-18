@@ -42,6 +42,8 @@ export const useAppStore = defineStore('app', () => {
   const latestVersion = ref<string>('')
   const hasUpdate = ref<boolean>(false)
   const buildType = ref<string>('source')
+  const autoUpdateAllowed = ref<boolean>(false)
+  const updateRepository = ref<string>('Wei-Shaw/sub2api')
   const releaseInfo = ref<ReleaseInfo | null>(null)
 
   // Auto-incrementing ID for toasts
@@ -248,6 +250,8 @@ export const useAppStore = defineStore('app', () => {
         latest_version: latestVersion.value,
         has_update: hasUpdate.value,
         build_type: buildType.value,
+        auto_update_allowed: autoUpdateAllowed.value,
+        update_repository: updateRepository.value,
         release_info: releaseInfo.value || undefined,
         cached: true
       }
@@ -265,6 +269,8 @@ export const useAppStore = defineStore('app', () => {
       latestVersion.value = data.latest_version
       hasUpdate.value = data.has_update
       buildType.value = data.build_type || 'source'
+      autoUpdateAllowed.value = data.auto_update_allowed ?? false
+      updateRepository.value = data.update_repository || 'Wei-Shaw/sub2api'
       releaseInfo.value = data.release_info || null
       versionLoaded.value = true
       return data
@@ -458,6 +464,8 @@ export const useAppStore = defineStore('app', () => {
     latestVersion,
     hasUpdate,
     buildType,
+    autoUpdateAllowed,
+    updateRepository,
     releaseInfo,
 
     // Computed
