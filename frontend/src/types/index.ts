@@ -1131,6 +1131,10 @@ export interface Account {
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
     upstream_billing_probe_enabled?: boolean
     upstream_billing_rate_sync_enabled?: boolean
+    upstream_billing_probe_adapter?: 'new_api_pricing' | 'custom_json' | ''
+    upstream_billing_probe_path?: string
+    upstream_billing_probe_rate_path?: string
+    upstream_billing_probe_group?: string
     upstream_billing_probe?: UpstreamBillingProbeSnapshot
     codex_reset_credit_snapshot?: {
       available_count?: number

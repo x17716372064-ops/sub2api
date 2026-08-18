@@ -1787,6 +1787,53 @@
         />
       </div>
 
+      <div v-if="account?.type === 'apikey'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">{{ t('admin.accounts.upstreamBilling.adapter') }}</label>
+        <select
+          v-model="upstreamBillingProbeAdapter"
+          class="input"
+          @change="handleUpstreamBillingProbeAdapterChange(upstreamBillingProbeAdapter)"
+        >
+          <option value="">{{ t('admin.accounts.upstreamBilling.adapterNone') }}</option>
+          <option value="new_api_pricing">{{ t('admin.accounts.upstreamBilling.adapterNewAPI') }}</option>
+          <option value="custom_json">{{ t('admin.accounts.upstreamBilling.adapterCustomJSON') }}</option>
+        </select>
+        <p class="input-hint">{{ t('admin.accounts.upstreamBilling.adapterHint') }}</p>
+
+        <div v-if="upstreamBillingProbeAdapter" class="mt-3 space-y-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamBilling.path') }}</label>
+            <input
+              v-model="upstreamBillingProbePath"
+              type="text"
+              class="input font-mono"
+              placeholder="/api/pricing"
+            />
+            <p class="input-hint">{{ t('admin.accounts.upstreamBilling.pathHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamBilling.ratePath') }}</label>
+            <input
+              v-model="upstreamBillingProbeRatePath"
+              type="text"
+              class="input font-mono"
+              placeholder="group_ratio"
+            />
+            <p class="input-hint">{{ t('admin.accounts.upstreamBilling.ratePathHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamBilling.group') }}</label>
+            <input
+              v-model="upstreamBillingProbeGroup"
+              type="text"
+              class="input"
+              :placeholder="t('admin.accounts.upstreamBilling.groupPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.upstreamBilling.groupHint') }}</p>
+          </div>
+        </div>
+      </div>
+
       <OllamaCloudUsageSettings
         v-if="account?.ollama_cloud_usage?.eligible"
         :account="account"
@@ -3038,6 +3085,12 @@ const autoPause5hDisabled = ref(false)
 const autoPause7dDisabled = ref(false)
 const upstreamBillingAutoProbeEnabled = ref(false)
 const upstreamBillingRateSyncEnabled = ref(false)
+const upstreamBillingProbeAdapter = ref<'' | 'new_api_pricing' | 'custom_json'>('')
+const upstreamBillingProbePath = ref('')
+const upstreamBillingProbeRatePath = ref('')
+const upstreamBillingProbeGroup = ref('')
+const DEFAULT_UPSTREAM_BILLING_PROBE_PATH = '/api/pricing'
+const DEFAULT_UPSTREAM_BILLING_PROBE_RATE_PATH = 'group_ratio'
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityProjectId = ref('')
@@ -3445,6 +3498,35 @@ const handleUpstreamBillingAutoProbeChange = (enabled: boolean) => {
   }
 }
 
+const handleUpstreamBillingProbeAdapterChange = (adapter: '' | 'new_api_pricing' | 'custom_json') => {
+  upstreamBillingProbeAdapter.value = adapter
+  if (adapter === 'new_api_pricing') {
+    if (!upstreamBillingProbePath.value.trim()) {
+      upstreamBillingProbePath.value = DEFAULT_UPSTREAM_BILLING_PROBE_PATH
+    }
+    if (!upstreamBillingProbeRatePath.value.trim()) {
+      upstreamBillingProbeRatePath.value = DEFAULT_UPSTREAM_BILLING_PROBE_RATE_PATH
+    }
+  }
+}
+
+const validateUpstreamBillingProbeForm = (): string | null => {
+  if (!upstreamBillingProbeAdapter.value) return null
+  const path = upstreamBillingProbePath.value.trim()
+  if (!path) return 'pathRequired'
+  if (!path.startsWith('/') || path.includes('://') || path.includes('..') || /[\r\n?#]/.test(path)) {
+    return 'pathInvalid'
+  }
+  const ratePath = upstreamBillingProbeRatePath.value.trim()
+  if (!ratePath || ratePath.split('.').some(segment => !segment.trim()) || ratePath.includes('..')) {
+    return 'ratePathRequired'
+  }
+  if (upstreamBillingProbeAdapter.value === 'new_api_pricing' && !upstreamBillingProbeGroup.value.trim()) {
+    return 'groupRequired'
+  }
+  return null
+}
+
 const statusOptions = computed(() => {
   const options = [
     { value: 'active', label: t('common.active') },
@@ -3567,6 +3649,23 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
   upstreamBillingRateSyncEnabled.value =
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
+  const adapterValue = extra?.upstream_billing_probe_adapter
+  upstreamBillingProbeAdapter.value =
+    adapterValue === 'new_api_pricing' || adapterValue === 'custom_json' ? adapterValue : ''
+  upstreamBillingProbePath.value =
+    typeof extra?.upstream_billing_probe_path === 'string'
+      ? extra.upstream_billing_probe_path
+      : upstreamBillingProbeAdapter.value === 'new_api_pricing'
+        ? DEFAULT_UPSTREAM_BILLING_PROBE_PATH
+        : ''
+  upstreamBillingProbeRatePath.value =
+    typeof extra?.upstream_billing_probe_rate_path === 'string'
+      ? extra.upstream_billing_probe_rate_path
+      : upstreamBillingProbeAdapter.value === 'new_api_pricing'
+        ? DEFAULT_UPSTREAM_BILLING_PROBE_RATE_PATH
+        : ''
+  upstreamBillingProbeGroup.value =
+    typeof extra?.upstream_billing_probe_group === 'string' ? extra.upstream_billing_probe_group : ''
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
@@ -4435,6 +4534,11 @@ const handleSubmit = async () => {
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
     if (props.account.type === 'apikey') {
+      const upstreamBillingProbeFormError = validateUpstreamBillingProbeForm()
+      if (upstreamBillingProbeFormError) {
+        appStore.showError(t(`admin.accounts.upstreamBilling.${upstreamBillingProbeFormError}`))
+        return
+      }
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
       if (upstreamBillingRateSyncEnabled.value) {
@@ -5029,6 +5133,24 @@ const handleSubmit = async () => {
       if (props.account.type === 'apikey') {
         delete newExtra.upstream_billing_probe_enabled
         delete newExtra.upstream_billing_rate_sync_enabled
+        // An explicit empty adapter is the backend's clear marker. Keeping the
+        // marker in this request lets ordinary edits preserve existing config,
+        // while choosing “原生 Sub2API” removes stale custom endpoint fields.
+        if (!upstreamBillingProbeAdapter.value) {
+          newExtra.upstream_billing_probe_adapter = ''
+          delete newExtra.upstream_billing_probe_path
+          delete newExtra.upstream_billing_probe_rate_path
+          delete newExtra.upstream_billing_probe_group
+        } else {
+          newExtra.upstream_billing_probe_adapter = upstreamBillingProbeAdapter.value
+          newExtra.upstream_billing_probe_path = upstreamBillingProbePath.value.trim()
+          newExtra.upstream_billing_probe_rate_path = upstreamBillingProbeRatePath.value.trim()
+          if (upstreamBillingProbeGroup.value.trim()) {
+            newExtra.upstream_billing_probe_group = upstreamBillingProbeGroup.value.trim()
+          } else {
+            delete newExtra.upstream_billing_probe_group
+          }
+        }
       }
       // Total quota
       if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {

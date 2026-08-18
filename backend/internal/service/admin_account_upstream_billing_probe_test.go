@@ -189,6 +189,61 @@ func TestUpdateAccountPreservesManagedUpstreamBillingProbeStateForUnrelatedEdit(
 	require.Equal(t, "value", updated.Extra["custom"])
 }
 
+func TestUpdateAccountPreservesAdapterConfigForUnrelatedEdit(t *testing.T) {
+	accountID := int64(111)
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {
+			ID:       accountID,
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Status:   StatusActive,
+			Extra: map[string]any{
+				UpstreamBillingProbeAdapterExtraKey:  UpstreamBillingProbeAdapterNewAPI,
+				UpstreamBillingProbePathExtraKey:     "/api/pricing",
+				UpstreamBillingProbeRatePathExtraKey: "group_ratio",
+				UpstreamBillingProbeGroupExtraKey:    "codex-special",
+			},
+		},
+	}}
+
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Extra: map[string]any{"custom": "value"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeAdapterNewAPI, updated.Extra[UpstreamBillingProbeAdapterExtraKey])
+	require.Equal(t, "/api/pricing", updated.Extra[UpstreamBillingProbePathExtraKey])
+	require.Equal(t, "group_ratio", updated.Extra[UpstreamBillingProbeRatePathExtraKey])
+	require.Equal(t, "codex-special", updated.Extra[UpstreamBillingProbeGroupExtraKey])
+}
+
+func TestUpdateAccountClearsAdapterConfigWithEmptyAdapter(t *testing.T) {
+	accountID := int64(113)
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {
+			ID:       accountID,
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Status:   StatusActive,
+			Extra: map[string]any{
+				UpstreamBillingProbeAdapterExtraKey:  UpstreamBillingProbeAdapterCustomJSON,
+				UpstreamBillingProbePathExtraKey:     "/pricing",
+				UpstreamBillingProbeRatePathExtraKey: "data.rate",
+				UpstreamBillingProbeGroupExtraKey:    "old-group",
+			},
+		},
+	}}
+
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Extra: map[string]any{UpstreamBillingProbeAdapterExtraKey: ""},
+	})
+
+	require.NoError(t, err)
+	for _, key := range upstreamBillingProbeAdapterExtraKeys {
+		require.NotContains(t, updated.Extra, key)
+	}
+}
+
 func TestUpdateAccountPreservesGrokBillingSnapshotForUnrelatedEdit(t *testing.T) {
 	accountID := int64(112)
 	billing := &xai.BillingSummary{

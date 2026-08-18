@@ -32,6 +32,10 @@ const (
 	UpstreamBillingProbeExtraKey           = "upstream_billing_probe"
 	UpstreamBillingProbeEnabledExtraKey    = "upstream_billing_probe_enabled"
 	UpstreamBillingRateSyncEnabledExtraKey = "upstream_billing_rate_sync_enabled"
+	UpstreamBillingProbeAdapterExtraKey    = "upstream_billing_probe_adapter"
+	UpstreamBillingProbePathExtraKey       = "upstream_billing_probe_path"
+	UpstreamBillingProbeRatePathExtraKey   = "upstream_billing_probe_rate_path"
+	UpstreamBillingProbeGroupExtraKey      = "upstream_billing_probe_group"
 
 	upstreamBillingProbeDefaultIntervalMinutes = 30
 	upstreamBillingProbeMinIntervalMinutes     = 5
@@ -93,7 +97,138 @@ const (
 	UpstreamBillingProbeStatusOK          = "ok"
 	UpstreamBillingProbeStatusUnsupported = "unsupported"
 	UpstreamBillingProbeStatusFailed      = "failed"
+
+	UpstreamBillingProbeAdapterNewAPI     = "new_api_pricing"
+	UpstreamBillingProbeAdapterCustomJSON = "custom_json"
 )
+
+const (
+	defaultNewAPIPricingPath            = "/api/pricing"
+	defaultNewAPIPricingRatePath        = "group_ratio"
+	maxUpstreamBillingProbeConfigLength = 256
+)
+
+type upstreamBillingProbeAdapterConfig struct {
+	Adapter  string
+	Path     string
+	RatePath string
+	Group    string
+}
+
+// ValidateUpstreamBillingProbeConfig validates the optional account-level
+// adapter configuration. Paths are deliberately restricted to the existing
+// upstream host so an API key cannot be redirected to another host by an
+// account edit.
+func ValidateUpstreamBillingProbeConfig(extra map[string]any) error {
+	if extra == nil {
+		return nil
+	}
+	rawAdapter, adapterPresent := extra[UpstreamBillingProbeAdapterExtraKey]
+	if !adapterPresent {
+		return nil
+	}
+	adapter, ok := rawAdapter.(string)
+	if !ok {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_ADAPTER", "upstream billing probe adapter must be a string")
+	}
+	adapter = strings.TrimSpace(adapter)
+	if adapter == "" {
+		return nil
+	}
+	if adapter != UpstreamBillingProbeAdapterNewAPI && adapter != UpstreamBillingProbeAdapterCustomJSON {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_ADAPTER", "unsupported upstream billing probe adapter")
+	}
+	path, _ := extra[UpstreamBillingProbePathExtraKey].(string)
+	if path == "" && adapter == UpstreamBillingProbeAdapterNewAPI {
+		path = defaultNewAPIPricingPath
+	}
+	ratePath, _ := extra[UpstreamBillingProbeRatePathExtraKey].(string)
+	if ratePath == "" && adapter == UpstreamBillingProbeAdapterNewAPI {
+		ratePath = defaultNewAPIPricingRatePath
+	}
+	if err := validateUpstreamBillingProbeRelativePath(path, "path"); err != nil {
+		return err
+	}
+	if err := validateUpstreamBillingProbeJSONPath(ratePath); err != nil {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_RATE_PATH", "upstream billing rate path is invalid")
+	}
+	if adapter == UpstreamBillingProbeAdapterNewAPI {
+		group, _ := extra[UpstreamBillingProbeGroupExtraKey].(string)
+		if strings.TrimSpace(group) == "" || len([]rune(group)) > maxUpstreamBillingProbeConfigLength {
+			return infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_GROUP", "a group is required for the New API pricing adapter")
+		}
+	}
+	return nil
+}
+
+func validateUpstreamBillingProbeRelativePath(path, field string) error {
+	path = strings.TrimSpace(path)
+	if path == "" || len([]rune(path)) > maxUpstreamBillingProbeConfigLength || !strings.HasPrefix(path, "/") ||
+		strings.Contains(path, "://") || strings.Contains(path, "..") || strings.ContainsAny(path, "\r\n?#") {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_PATH", fmt.Sprintf("upstream billing %s must be a same-host relative path", field))
+	}
+	return nil
+}
+
+func validateUpstreamBillingProbeJSONPath(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" || len([]rune(path)) > maxUpstreamBillingProbeConfigLength ||
+		strings.Contains(path, "..") || strings.ContainsAny(path, "\r\n") {
+		return errors.New("invalid JSON path")
+	}
+	for _, segment := range strings.Split(path, ".") {
+		if strings.TrimSpace(segment) == "" {
+			return errors.New("invalid JSON path segment")
+		}
+	}
+	return nil
+}
+
+func upstreamBillingProbeAdapterConfigFor(account *Account) (upstreamBillingProbeAdapterConfig, error) {
+	var config upstreamBillingProbeAdapterConfig
+	if account == nil || account.Extra == nil {
+		return config, nil
+	}
+	config.Adapter, _ = account.Extra[UpstreamBillingProbeAdapterExtraKey].(string)
+	config.Path, _ = account.Extra[UpstreamBillingProbePathExtraKey].(string)
+	config.RatePath, _ = account.Extra[UpstreamBillingProbeRatePathExtraKey].(string)
+	config.Group, _ = account.Extra[UpstreamBillingProbeGroupExtraKey].(string)
+	config.Adapter = strings.TrimSpace(config.Adapter)
+	config.Path = strings.TrimSpace(config.Path)
+	config.RatePath = strings.TrimSpace(config.RatePath)
+	config.Group = strings.TrimSpace(config.Group)
+	if config.Adapter == UpstreamBillingProbeAdapterNewAPI {
+		if config.Path == "" {
+			config.Path = defaultNewAPIPricingPath
+		}
+		if config.RatePath == "" {
+			config.RatePath = defaultNewAPIPricingRatePath
+		}
+	}
+	if config.Adapter != "" {
+		if err := ValidateUpstreamBillingProbeConfig(map[string]any{
+			UpstreamBillingProbeAdapterExtraKey:  config.Adapter,
+			UpstreamBillingProbePathExtraKey:     config.Path,
+			UpstreamBillingProbeRatePathExtraKey: config.RatePath,
+			UpstreamBillingProbeGroupExtraKey:    config.Group,
+		}); err != nil {
+			return upstreamBillingProbeAdapterConfig{}, err
+		}
+	}
+	return config, nil
+}
+
+func buildUpstreamBillingProbeCustomURL(baseURL, endpoint string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return strings.TrimRight(baseURL, "/") + endpoint
+	}
+	parsed.Path = endpoint
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
 
 // UpstreamBillingProbeSettings controls the periodic probe runner.
 type UpstreamBillingProbeSettings struct {
@@ -590,6 +725,10 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 	if s.accountTestService == nil || s.accountTestService.httpUpstream == nil {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "transport_unavailable", 0)
 	}
+	adapterConfig, adapterErr := upstreamBillingProbeAdapterConfigFor(account)
+	if adapterErr != nil {
+		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "invalid_adapter_config", 0)
+	}
 	// 平台放宽后取数直读 credentials：所有 API-key 平台的密钥与自定义上游
 	// 统一存放在 credentials.api_key / credentials.base_url。
 	apiKey := account.GetCredential("api_key")
@@ -602,7 +741,7 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 			// 保持官方语义：OpenAI 账号无自定义 base 时探官方域（404 → unsupported）。
 			baseURL = "https://api.openai.com"
 		}
-	} else if upstreamBillingProbeTargetIsOfficialAPI(baseURL) {
+	} else if adapterConfig.Adapter == "" && upstreamBillingProbeTargetIsOfficialAPI(baseURL) {
 		// 其他平台 base_url 为空或指向官方 API 根域（前端创建时会把空值
 		// 填成官方默认域，且提供 us-east-1.api.x.ai 等官方区域预设）⇒
 		// 必无 /v1/sub2api/billing；不发请求，直接记 unsupported，避免
@@ -624,6 +763,11 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 		proxyURL = account.Proxy.URL()
 	}
 	probeURL := buildOpenAIEndpointURL(normalizedBaseURL, "/v1/sub2api/billing")
+	if adapterConfig.Adapter != "" {
+		// Configured adapter paths are host-root paths. This keeps `/api/pricing`
+		// reachable when an OpenAI-compatible base URL itself ends in `/v1`.
+		probeURL = buildUpstreamBillingProbeCustomURL(normalizedBaseURL, adapterConfig.Path)
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, upstreamBillingProbeRequestTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, probeURL, bytes.NewReader(nil))
@@ -665,9 +809,18 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "http_error", retryAfter(resp.Header, now))
 	}
-	data, err := parseUpstreamBillingProbeResponse(body)
+	var data map[string]any
+	if adapterConfig.Adapter != "" {
+		data, err = parseCustomUpstreamBillingProbeResponse(body, adapterConfig, now)
+	} else {
+		data, err = parseUpstreamBillingProbeResponse(body)
+	}
 	if err != nil {
-		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "invalid_response", retryAfter(resp.Header, now))
+		reason := "invalid_response"
+		if adapterConfig.Adapter != "" {
+			reason = "invalid_adapter_response"
+		}
+		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, reason, retryAfter(resp.Header, now))
 	}
 	snapshot := &UpstreamBillingProbeSnapshot{
 		Status:        UpstreamBillingProbeStatusOK,
@@ -847,6 +1000,139 @@ func parseUpstreamBillingProbeResponse(body []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("inconsistent effective billing multiplier")
 	}
 	return data, nil
+}
+
+// parseCustomUpstreamBillingProbeResponse normalizes provider-specific JSON
+// responses into the same snapshot shape consumed by scheduling, rate sync,
+// and the admin UI. The configured rate path uses a dot-separated object path;
+// when a group is configured, the path must resolve to an object containing
+// that group name.
+func parseCustomUpstreamBillingProbeResponse(
+	body []byte,
+	config upstreamBillingProbeAdapterConfig,
+	now time.Time,
+) (map[string]any, error) {
+	if config.Adapter != UpstreamBillingProbeAdapterNewAPI && config.Adapter != UpstreamBillingProbeAdapterCustomJSON {
+		return nil, fmt.Errorf("unsupported billing probe adapter")
+	}
+	if err := ValidateUpstreamBillingProbeConfig(map[string]any{
+		UpstreamBillingProbeAdapterExtraKey:  config.Adapter,
+		UpstreamBillingProbePathExtraKey:     config.Path,
+		UpstreamBillingProbeRatePathExtraKey: config.RatePath,
+		UpstreamBillingProbeGroupExtraKey:    config.Group,
+	}); err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	var root any
+	if err := decoder.Decode(&root); err != nil {
+		return nil, fmt.Errorf("decode custom billing response: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("custom billing response contains multiple JSON values")
+		}
+		return nil, fmt.Errorf("decode custom billing response: %w", err)
+	}
+
+	value, ok := lookupUpstreamBillingProbeJSONPath(root, config.RatePath)
+	if !ok {
+		return nil, fmt.Errorf("custom billing rate path %q was not found", config.RatePath)
+	}
+	if strings.TrimSpace(config.Group) != "" {
+		groupValues, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("custom billing rate path %q is not an object", config.RatePath)
+		}
+		value, ok = groupValues[config.Group]
+		if !ok {
+			return nil, fmt.Errorf("custom billing group %q was not found", config.Group)
+		}
+	}
+	rate, err := upstreamBillingProbeNumber(value)
+	if err != nil {
+		return nil, fmt.Errorf("custom billing rate at %q is invalid: %w", config.RatePath, err)
+	}
+	if rate < 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return nil, fmt.Errorf("custom billing rate must be a finite non-negative number")
+	}
+
+	return map[string]any{
+		"object":                    "sub2api.custom_billing",
+		"schema_version":            1,
+		"billing_scope":             "token",
+		"group_rate_multiplier":     rate,
+		"resolved_rate_multiplier":  rate,
+		"peak_rate_enabled":         false,
+		"effective_rate_multiplier": rate,
+		"observed_at":               now.UTC().Format(time.RFC3339Nano),
+		"probe_adapter":             config.Adapter,
+		"probe_group":               config.Group,
+	}, nil
+}
+
+func lookupUpstreamBillingProbeJSONPath(root any, path string) (any, bool) {
+	current := root
+	for _, segment := range strings.Split(strings.TrimSpace(path), ".") {
+		segment = strings.TrimSpace(segment)
+		switch typed := current.(type) {
+		case map[string]any:
+			var ok bool
+			current, ok = typed[segment]
+			if !ok {
+				return nil, false
+			}
+		case []any:
+			index, err := strconv.Atoi(segment)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		default:
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+func upstreamBillingProbeNumber(value any) (float64, error) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, nil
+	case float32:
+		return float64(typed), nil
+	case json.Number:
+		parsed, err := typed.Float64()
+		if err != nil {
+			return 0, err
+		}
+		return parsed, nil
+	case int:
+		return float64(typed), nil
+	case int8:
+		return float64(typed), nil
+	case int16:
+		return float64(typed), nil
+	case int32:
+		return float64(typed), nil
+	case int64:
+		return float64(typed), nil
+	case uint:
+		return float64(typed), nil
+	case uint8:
+		return float64(typed), nil
+	case uint16:
+		return float64(typed), nil
+	case uint32:
+		return float64(typed), nil
+	case uint64:
+		return float64(typed), nil
+	default:
+		return 0, fmt.Errorf("expected number, got %T", value)
+	}
 }
 
 func upstreamBillingRateAt(data map[string]any, now time.Time) (float64, bool) {

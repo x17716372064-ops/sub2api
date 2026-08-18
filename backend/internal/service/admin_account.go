@@ -396,6 +396,55 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 	return normalized, nil
 }
 
+var upstreamBillingProbeAdapterExtraKeys = []string{
+	UpstreamBillingProbeAdapterExtraKey,
+	UpstreamBillingProbePathExtraKey,
+	UpstreamBillingProbeRatePathExtraKey,
+	UpstreamBillingProbeGroupExtraKey,
+}
+
+// normalizeUpstreamBillingProbeAdapterUpdateExtra keeps adapter settings
+// stable across ordinary account edits. An explicit adapter key is the replace
+// signal; an empty adapter clears all four keys. If no adapter key is present,
+// the caller did not edit this feature and the existing values are preserved.
+func normalizeUpstreamBillingProbeAdapterUpdateExtra(
+	extra map[string]any,
+) (map[string]any, bool, error) {
+	if extra == nil {
+		return nil, false, nil
+	}
+	normalized := maps.Clone(extra)
+	_, adapterProvided := normalized[UpstreamBillingProbeAdapterExtraKey]
+	if !adapterProvided {
+		for _, key := range upstreamBillingProbeAdapterExtraKeys[1:] {
+			if _, exists := normalized[key]; exists {
+				return nil, true, infraerrors.BadRequest(
+					"INVALID_UPSTREAM_BILLING_PROBE_ADAPTER",
+					"upstream billing adapter must be provided with its adapter type",
+				)
+			}
+		}
+		return normalized, false, nil
+	}
+	adapter, ok := normalized[UpstreamBillingProbeAdapterExtraKey].(string)
+	if !ok {
+		return nil, true, infraerrors.BadRequest(
+			"INVALID_UPSTREAM_BILLING_PROBE_ADAPTER",
+			"upstream billing probe adapter must be a string",
+		)
+	}
+	if strings.TrimSpace(adapter) == "" {
+		for _, key := range upstreamBillingProbeAdapterExtraKeys {
+			delete(normalized, key)
+		}
+		return normalized, true, nil
+	}
+	if err := ValidateUpstreamBillingProbeConfig(normalized); err != nil {
+		return nil, true, err
+	}
+	return normalized, true, nil
+}
+
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
@@ -468,6 +517,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	}
 	accountExtra, err = normalizeGrokMediaEligibilityExtra(input.Platform, accountExtra)
 	if err != nil {
+		return nil, err
+	}
+	if err := ValidateUpstreamBillingProbeConfig(accountExtra); err != nil {
 		return nil, err
 	}
 
@@ -550,12 +602,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		return nil, err
 	}
 	var normalizedExtra map[string]any
+	adapterConfigProvided := false
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
 		}
 		normalizedExtra, err = normalizeGrokMediaEligibilityUpdateExtra(account, input, normalizedExtra)
+		if err != nil {
+			return nil, err
+		}
+		normalizedExtra, adapterConfigProvided, err = normalizeUpstreamBillingProbeAdapterUpdateExtra(normalizedExtra)
 		if err != nil {
 			return nil, err
 		}
@@ -654,6 +711,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				normalizedExtra[key] = v
 			}
 		}
+		if !adapterConfigProvided {
+			for _, key := range upstreamBillingProbeAdapterExtraKeys {
+				if v, ok := account.Extra[key]; ok {
+					normalizedExtra[key] = v
+				}
+			}
+		}
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra
 		if account.Platform == PlatformAntigravity && wasOveragesEnabled && !account.IsOveragesEnabled() {
@@ -722,6 +786,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if !isUpstreamBillingProbeAccount(account) {
 			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
 			delete(account.Extra, UpstreamBillingRateSyncEnabledExtraKey)
+			for _, key := range upstreamBillingProbeAdapterExtraKeys {
+				delete(account.Extra, key)
+			}
+		}
+	}
+	if account.Extra != nil && !isUpstreamBillingProbeAccount(account) {
+		for _, key := range upstreamBillingProbeAdapterExtraKeys {
+			delete(account.Extra, key)
 		}
 	}
 	if account.Extra != nil {
@@ -863,6 +935,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, UpstreamBillingProbeEnabledExtraKey)
 	delete(updates, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(updates, UpstreamBillingProbeExtraKey)
+	for _, key := range upstreamBillingProbeAdapterExtraKeys {
+		delete(updates, key)
+	}
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
@@ -889,6 +964,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingProbeExtraKey)
+	for _, key := range upstreamBillingProbeAdapterExtraKeys {
+		delete(input.Extra, key)
+	}
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
