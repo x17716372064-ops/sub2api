@@ -3,7 +3,7 @@ name: Custom Release
 on:
   push:
     tags:
-      - "v*+custom.*"
+      - "v*custom.*"
 
 permissions:
   contents: write
