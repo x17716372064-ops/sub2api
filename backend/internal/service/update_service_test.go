@@ -73,7 +73,7 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 
 func TestUpdateServiceCustomBuildCanCheckWithoutReplacingBinary(t *testing.T) {
 	client := &updateServiceGitHubClientStub{
-		release: &GitHubRelease{TagName: "v0.1.178+custom.2"},
+		release: &GitHubRelease{TagName: "v0.1.177+custom.2"},
 	}
 	svc := NewUpdateServiceWithConfig(
 		&updateServiceCacheStub{},
@@ -93,8 +93,36 @@ func TestUpdateServiceCustomBuildCanCheckWithoutReplacingBinary(t *testing.T) {
 	require.ErrorIs(t, svc.PerformUpdate(context.Background()), ErrInPlaceUpdateDisabled)
 }
 
+func TestUpdateServiceCustomBuildCannotReplaceItselfFromOfficialRepository(t *testing.T) {
+	svc := NewUpdateServiceWithConfig(
+		&updateServiceCacheStub{},
+		&updateServiceGitHubClientStub{},
+		"0.1.177+custom.1",
+		"custom",
+		"Wei-Shaw/sub2api",
+		true,
+	)
+
+	require.False(t, svc.allowInPlace)
+}
+
+func TestUpdateServiceCustomBuildCanUseCustomReleaseRepository(t *testing.T) {
+	svc := NewUpdateServiceWithConfig(
+		&updateServiceCacheStub{},
+		&updateServiceGitHubClientStub{},
+		"0.1.177+custom.1",
+		"custom",
+		"example/sub2api",
+		true,
+	)
+
+	require.True(t, svc.allowInPlace)
+}
+
 func TestCompareVersionsSupportsCustomBuildMetadata(t *testing.T) {
 	require.Zero(t, compareVersions("0.1.177+custom.1", "0.1.177"))
+	require.Negative(t, compareVersions("0.1.177+custom.1", "0.1.177+custom.2"))
+	require.Positive(t, compareVersions("0.1.177+custom.12", "0.1.177+custom.2"))
 	require.Negative(t, compareVersions("0.1.177+custom.9", "0.1.178+custom.1"))
 }
 

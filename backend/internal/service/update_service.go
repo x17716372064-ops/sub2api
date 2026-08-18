@@ -84,7 +84,11 @@ func NewUpdateServiceWithConfig(cache UpdateCache, githubClient GitHubReleaseCli
 	if releaseRepo == "" {
 		releaseRepo = githubRepo
 	}
-	allowInPlace = allowInPlace && buildType != "source"
+	// A custom binary must never replace itself with a stock upstream release.
+	// This remains safe even when an old deployment leaves the official
+	// repository and UPDATE_ALLOW_IN_PLACE=true at their original defaults.
+	isOfficialRepo := strings.EqualFold(strings.TrimSuffix(releaseRepo, "/"), githubRepo)
+	allowInPlace = allowInPlace && buildType != "source" && !(buildType == "custom" && isOfficialRepo)
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
@@ -680,7 +684,23 @@ func compareVersions(current, latest string) int {
 	currentSemver := normalizeSemver(current)
 	latestSemver := normalizeSemver(latest)
 	if semver.IsValid(currentSemver) && semver.IsValid(latestSemver) {
-		return semver.Compare(currentSemver, latestSemver)
+		if result := semver.Compare(currentSemver, latestSemver); result != 0 {
+			return result
+		}
+
+		// SemVer intentionally ignores build metadata. Our custom releases use
+		// +custom.N so compare the revision when both versions share a base.
+		currentRevision, currentIsCustom := customBuildRevision(currentSemver)
+		latestRevision, latestIsCustom := customBuildRevision(latestSemver)
+		if currentIsCustom && latestIsCustom {
+			if currentRevision < latestRevision {
+				return -1
+			}
+			if currentRevision > latestRevision {
+				return 1
+			}
+		}
+		return 0
 	}
 
 	currentParts := parseVersion(current)
@@ -695,6 +715,22 @@ func compareVersions(current, latest string) int {
 		}
 	}
 	return 0
+}
+
+func customBuildRevision(version string) (uint64, bool) {
+	_, metadata, found := strings.Cut(version, "+")
+	if !found {
+		return 0, false
+	}
+	parts := strings.Split(metadata, ".")
+	if len(parts) != 2 || parts[0] != "custom" {
+		return 0, false
+	}
+	revision, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return revision, true
 }
 
 func normalizeSemver(version string) string {

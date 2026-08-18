@@ -17,6 +17,9 @@ Fork 到自己的 GitHub 仓库后，启用 Actions，并允许 Actions 对仓�
 
 `Custom Release` 会为该标签构建 Linux AMD64 二进制、校验文件和 GitHub Release。
 发生合并冲突或测试失败时不会发布，需要在本地处理后再重新运行工作流。
+同一官方版本下的自定义修订会按 `custom.1`、`custom.2` 依次递增，更新器也会比较
+这个修订号。发布二进制会注入完整的 `0.1.x+custom.N` 版本，避免重启后退回官方
+基线版本号。
 
 ## 更新器配置
 
@@ -28,6 +31,8 @@ UPDATE_ALLOW_IN_PLACE=false
 ```
 
 这样仍能看到官方的新版本提示，但“立即更新”不会覆盖自定义代码。
+自定义构建还带有强制保护：即便这里误设成 `true`，只要更新仓库仍是
+`Wei-Shaw/sub2api`，程序也会拒绝原地覆盖。
 
 自己的 Fork 已成功生成 Custom Release 后，改为：
 
