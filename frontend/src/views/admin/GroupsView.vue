@@ -613,6 +613,40 @@
           />
           <p class="input-hint">{{ t("admin.groups.rateMultiplierHint") }}</p>
         </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label">{{
+              t("admin.groups.form.preferLowestRateAccount")
+            }}</label>
+            <p class="input-hint">
+              {{ t("admin.groups.form.preferLowestRateAccountHint") }}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="createForm.prefer_lowest_rate_account"
+            @click="
+              createForm.prefer_lowest_rate_account =
+                !createForm.prefer_lowest_rate_account
+            "
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+              createForm.prefer_lowest_rate_account
+                ? 'bg-primary-500'
+                : 'bg-gray-300 dark:bg-dark-600',
+            ]"
+          >
+            <span
+              :class="[
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                createForm.prefer_lowest_rate_account
+                  ? 'translate-x-6'
+                  : 'translate-x-1',
+              ]"
+            />
+          </button>
+        </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
           <input
@@ -5078,6 +5112,7 @@ const createForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  prefer_lowest_rate_account: false,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -5899,6 +5934,7 @@ const closeCreateModal = () => {
   createForm.description = "";
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
+  createForm.prefer_lowest_rate_account = false;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;

@@ -787,6 +787,60 @@ func TestBuildOpenAISelectionOrderIncludesOverflowOnlyForCostScheduling(t *testi
 	})
 }
 
+func TestBuildOpenAISelectionOrderLowestRateIgnoresTopKForFailover(t *testing.T) {
+	rateExpensive, rateCheap, rateMiddle := 2.0, 0.25, 0.8
+	scheduler := &defaultOpenAIAccountScheduler{}
+	candidates := []openAIAccountCandidateScore{
+		{account: &Account{ID: 1, RateMultiplier: &rateExpensive}, loadInfo: &AccountLoadInfo{}},
+		{account: &Account{ID: 2, RateMultiplier: &rateCheap}, loadInfo: &AccountLoadInfo{}},
+		{account: &Account{ID: 3, RateMultiplier: &rateMiddle}, loadInfo: &AccountLoadInfo{}},
+	}
+
+	ordered := scheduler.buildOpenAISelectionOrder(OpenAIAccountScheduleRequest{PreferLowestRate: true}, openAIAccountLoadPlan{
+		candidates: candidates,
+		topK:       1,
+	})
+
+	require.Equal(t, []int64{2, 3, 1}, []int64{
+		ordered[0].account.ID,
+		ordered[1].account.ID,
+		ordered[2].account.ID,
+	})
+}
+
+func TestLowestRateSelectionFallsThroughAcquireFailureAndCooldown(t *testing.T) {
+	rateCheap, rateExpensive := 0.25, 1.0
+	cheap := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, RateMultiplier: &rateCheap}
+	expensive := &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, RateMultiplier: &rateExpensive}
+	acquiredIDs := []int64{}
+	cache := schedulerTestConcurrencyCache{
+		acquireResults: map[int64]bool{cheap.ID: false, expensive.ID: true},
+		acquiredIDs:    &acquiredIDs,
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: &OpenAIGatewayService{
+		concurrencyService: NewConcurrencyService(cache),
+	}}
+	selection, _, err := scheduler.tryAcquireOpenAISelectionOrder(context.Background(), OpenAIAccountScheduleRequest{
+		Platform:         PlatformOpenAI,
+		PreferLowestRate: true,
+	}, []openAIAccountCandidateScore{
+		{account: cheap, loadInfo: &AccountLoadInfo{}},
+		{account: expensive, loadInfo: &AccountLoadInfo{}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, expensive.ID, selection.Account.ID)
+	require.Equal(t, []int64{cheap.ID, expensive.ID}, acquiredIDs)
+	selection.ReleaseFunc()
+
+	future := time.Now().Add(time.Minute)
+	cheap.TempUnschedulableUntil = &future
+	require.Nil(t, scheduler.service.resolveFreshSchedulableOpenAIAccount(context.Background(), cheap, PlatformOpenAI, "", false, ""))
+	past := time.Now().Add(-time.Second)
+	cheap.TempUnschedulableUntil = &past
+	require.NotNil(t, scheduler.service.resolveFreshSchedulableOpenAIAccount(context.Background(), cheap, PlatformOpenAI, "", false, ""))
+}
+
 func TestBuildOpenAIAccountLoadPlanUsesCostOnlyForTokenScope(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
