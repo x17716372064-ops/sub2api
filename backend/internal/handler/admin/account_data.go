@@ -205,7 +205,7 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			Platform:           acc.Platform,
 			Type:               acc.Type,
 			Credentials:        acc.Credentials,
-			Extra:              acc.Extra,
+			Extra:              exportAccountExtra(acc.Extra),
 			ProxyKey:           proxyKey,
 			Concurrency:        acc.Concurrency,
 			Priority:           acc.Priority,
@@ -223,6 +223,23 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 	}
 
 	response.Success(c, payload)
+}
+
+// exportAccountExtra returns a copy of account.extra suitable for an explicit
+// administrator backup. The upstream website password is encrypted at rest,
+// but ciphertext is still a credential and must never leave the server.
+func exportAccountExtra(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(extra))
+	for key, value := range extra {
+		if key == service.UpstreamAccountBalancePasswordExtraKey {
+			continue
+		}
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (h *AccountHandler) ImportData(c *gin.Context) {

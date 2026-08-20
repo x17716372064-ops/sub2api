@@ -61,6 +61,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"upstream_billing_probe",
 	"upstream_billing_rate_sync",
 	"ollama_cloud_usage",
+	"upstream_account_balance",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
@@ -2565,6 +2566,7 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	}
 
 	clearProbeSnapshot := upstreamBillingProbeExplicitlyDisabled(updates) || upstreamBillingProbeSnapshotClearRequested(updates)
+	clearUpstreamAccountBalanceKeys := upstreamAccountBalanceExtraClearKeys(updates)
 	durableSchedulerChange := shouldEnqueueSchedulerOutboxForExtraUpdates(updates) || clearProbeSnapshot
 	baseCtx := ctx
 	contextTx := dbent.TxFromContext(ctx)
@@ -2585,6 +2587,9 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	extraExpression := "COALESCE(extra, '{}'::jsonb) || $1::jsonb"
 	if clearProbeSnapshot {
 		extraExpression = "(" + extraExpression + ") - 'upstream_billing_probe'"
+	}
+	for _, key := range clearUpstreamAccountBalanceKeys {
+		extraExpression = "(" + extraExpression + ") - '" + key + "'"
 	}
 	if service.ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates) {
 		extraExpression = ensureCodexFingerprintSeedSQL(extraExpression)
@@ -2824,6 +2829,20 @@ func upstreamBillingProbeSnapshotClearRequested(extra map[string]any) bool {
 func ollamaCloudUsageSnapshotClearRequested(extra map[string]any) bool {
 	value, ok := extra[service.OllamaCloudUsageSnapshotExtraKey]
 	return ok && value == nil
+}
+
+func upstreamAccountBalanceExtraClearKeys(extra map[string]any) []string {
+	keys := make([]string, 0, 3)
+	for _, key := range []string{
+		service.UpstreamAccountBalanceConfigExtraKey,
+		service.UpstreamAccountBalancePasswordExtraKey,
+		service.UpstreamAccountBalanceSnapshotExtraKey,
+	} {
+		if value, ok := extra[key]; ok && value == nil {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates service.AccountBulkUpdate) (int64, error) {

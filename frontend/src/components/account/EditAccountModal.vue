@@ -26,6 +26,94 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <!-- Optional upstream website login balance query. The password is
+           write-only; the backend returns only password_configured. -->
+      <div v-if="!isSparkShadow" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <label class="input-label mb-0">{{ t('admin.accounts.upstreamAccountBalance.title') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.upstreamAccountBalance.hint') }}
+            </p>
+          </div>
+          <div class="flex shrink-0 flex-wrap gap-2">
+            <button
+              v-if="upstreamAccountBalanceState?.configured"
+              type="button"
+              class="btn btn-secondary px-2 py-1 text-xs"
+              :disabled="upstreamAccountBalanceLoading"
+              @click="refreshUpstreamAccountBalanceNow"
+            >
+              {{ upstreamAccountBalanceLoading ? t('admin.accounts.upstreamAccountBalance.refreshing') : t('admin.accounts.upstreamAccountBalance.refresh') }}
+            </button>
+            <button
+              v-if="upstreamAccountBalanceState?.configured || upstreamAccountBalancePasswordConfigured"
+              type="button"
+              class="btn btn-danger px-2 py-1 text-xs"
+              :disabled="upstreamAccountBalanceLoading"
+              @click="clearUpstreamAccountBalanceNow"
+            >
+              {{ t('admin.accounts.upstreamAccountBalance.clear') }}
+            </button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamAccountBalance.website') }}</label>
+            <input
+              v-model="upstreamAccountBalanceWebsite"
+              type="url"
+              class="input"
+              autocomplete="url"
+              :placeholder="t('admin.accounts.upstreamAccountBalance.websitePlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamAccountBalance.email') }}</label>
+            <input
+              v-model="upstreamAccountBalanceEmail"
+              type="email"
+              class="input"
+              autocomplete="username"
+              :placeholder="t('admin.accounts.upstreamAccountBalance.emailPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.upstreamAccountBalance.password') }}</label>
+            <input
+              v-model="upstreamAccountBalancePassword"
+              type="password"
+              class="input"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              :placeholder="upstreamAccountBalancePasswordConfigured ? t('admin.accounts.upstreamAccountBalance.passwordKeep') : t('admin.accounts.upstreamAccountBalance.passwordPlaceholder')"
+            />
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          <span v-if="upstreamAccountBalanceLoading" class="text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.upstreamAccountBalance.loading') }}
+          </span>
+          <span v-else-if="upstreamAccountBalanceSnapshot" :class="upstreamAccountBalanceStatusClass">
+            {{ upstreamAccountBalanceStatusText }}
+          </span>
+          <span v-if="upstreamAccountBalanceSnapshot?.balance != null" class="font-medium text-gray-700 dark:text-gray-200">
+            {{ t('admin.accounts.upstreamAccountBalance.balance') }}: {{ formatUpstreamBalance(upstreamAccountBalanceSnapshot.balance) }}
+          </span>
+          <span v-if="upstreamAccountBalanceSnapshot?.remaining_quota != null" class="font-medium text-gray-700 dark:text-gray-200">
+            {{ t('admin.accounts.upstreamAccountBalance.remainingQuota') }}: {{ formatUpstreamBalance(upstreamAccountBalanceSnapshot.remaining_quota) }}
+          </span>
+          <span v-if="upstreamAccountBalanceSnapshot?.last_error" class="text-gray-500 dark:text-gray-400">
+            {{ t(`admin.accounts.upstreamAccountBalance.errors.${upstreamAccountBalanceSnapshot.last_error}`, upstreamAccountBalanceSnapshot.last_error) }}
+          </span>
+        </div>
+        <p v-if="upstreamAccountBalanceState?.password_configured" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.upstreamAccountBalance.passwordConfigured') }}
+        </p>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div>
@@ -2822,7 +2910,9 @@ import type {
   OpenAICompactMode,
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  UpstreamAccountBalanceSnapshot,
+  UpstreamAccountBalanceState
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2936,6 +3026,30 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const upstreamAccountBalanceState = ref<UpstreamAccountBalanceState | null>(null)
+const upstreamAccountBalanceWebsite = ref('')
+const upstreamAccountBalanceEmail = ref('')
+const upstreamAccountBalancePassword = ref('')
+const upstreamAccountBalanceLoading = ref(false)
+const upstreamAccountBalancePasswordConfigured = computed(() => upstreamAccountBalanceState.value?.password_configured === true)
+const upstreamAccountBalanceSnapshot = computed<UpstreamAccountBalanceSnapshot | null>(() => upstreamAccountBalanceState.value?.snapshot ?? null)
+const upstreamAccountBalanceStatusText = computed(() => {
+  const status = upstreamAccountBalanceSnapshot.value?.status
+  if (status === 'ok') return t('admin.accounts.upstreamAccountBalance.status.ok')
+  if (status === 'unsupported') return t('admin.accounts.upstreamAccountBalance.status.unsupported')
+  if (status === 'failed') return t('admin.accounts.upstreamAccountBalance.status.failed')
+  return t('admin.accounts.upstreamAccountBalance.status.notConfigured')
+})
+const upstreamAccountBalanceStatusClass = computed(() => {
+  const status = upstreamAccountBalanceSnapshot.value?.status
+  if (status === 'ok') return 'text-emerald-600 dark:text-emerald-400'
+  if (status === 'unsupported') return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+})
+const formatUpstreamBalance = (value: number) => {
+  if (!Number.isFinite(Number(value))) return '-'
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 6 })
+}
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
@@ -3600,8 +3714,123 @@ const applyOpenAIModelMappingCredentials = (credentials: Record<string, unknown>
   }
 }
 
+const resetUpstreamAccountBalanceForm = () => {
+  upstreamAccountBalanceState.value = null
+  upstreamAccountBalanceWebsite.value = ''
+  upstreamAccountBalanceEmail.value = ''
+  upstreamAccountBalancePassword.value = ''
+}
+
+const loadUpstreamAccountBalance = async (accountID: number) => {
+  upstreamAccountBalanceLoading.value = true
+  try {
+    const state = await adminAPI.accounts.getUpstreamAccountBalance(accountID)
+    upstreamAccountBalanceState.value = state
+    upstreamAccountBalanceWebsite.value = state.config?.website ?? ''
+    upstreamAccountBalanceEmail.value = state.config?.email ?? ''
+  } catch {
+    // Older servers may not have this optional endpoint yet. Keep the editor
+    // usable and let the explicit save surface the server-side error.
+    upstreamAccountBalanceState.value = null
+  } finally {
+    upstreamAccountBalanceLoading.value = false
+  }
+}
+
+const refreshUpstreamAccountBalanceNow = async () => {
+  if (!props.account) return
+  upstreamAccountBalanceLoading.value = true
+  try {
+    upstreamAccountBalanceState.value = await adminAPI.accounts.refreshUpstreamAccountBalance(props.account.id)
+    appStore.showSuccess(t('admin.accounts.upstreamAccountBalance.refreshSuccess'))
+  } catch (error: any) {
+    appStore.showError(error.message || t('admin.accounts.upstreamAccountBalance.refreshFailed'))
+  } finally {
+    upstreamAccountBalanceLoading.value = false
+  }
+}
+
+const clearUpstreamAccountBalanceNow = async () => {
+  if (!props.account) return
+  if (!window.confirm(t('admin.accounts.upstreamAccountBalance.clearConfirm'))) return
+  upstreamAccountBalanceLoading.value = true
+  try {
+    upstreamAccountBalanceState.value = await adminAPI.accounts.saveUpstreamAccountBalance(props.account.id, {
+      provider: 'new_api',
+      website: '',
+      email: '',
+      password: '',
+      clear_password: true
+    })
+    upstreamAccountBalanceWebsite.value = ''
+    upstreamAccountBalanceEmail.value = ''
+    upstreamAccountBalancePassword.value = ''
+    appStore.showSuccess(t('admin.accounts.upstreamAccountBalance.cleared'))
+  } catch (error: any) {
+    appStore.showError(error.message || t('admin.accounts.upstreamAccountBalance.clearFailed'))
+  } finally {
+    upstreamAccountBalanceLoading.value = false
+  }
+}
+
+const saveUpstreamAccountBalance = async (accountID: number): Promise<boolean> => {
+  const website = upstreamAccountBalanceWebsite.value.trim()
+  const email = upstreamAccountBalanceEmail.value.trim()
+  const password = upstreamAccountBalancePassword.value
+  const currentWebsite = upstreamAccountBalanceState.value?.config?.website?.trim() ?? ''
+  const currentEmail = upstreamAccountBalanceState.value?.config?.email?.trim() ?? ''
+  const dirty = website !== currentWebsite || email !== currentEmail || password.trim() !== ''
+  if (!dirty) return true
+  if (!website && !email && !password && (upstreamAccountBalanceState.value?.configured || upstreamAccountBalancePasswordConfigured.value)) {
+    try {
+      upstreamAccountBalanceLoading.value = true
+      upstreamAccountBalanceState.value = await adminAPI.accounts.saveUpstreamAccountBalance(accountID, {
+        provider: 'new_api',
+        website: '',
+        email: '',
+        password: '',
+        clear_password: true
+      })
+      upstreamAccountBalancePassword.value = ''
+      appStore.showSuccess(t('admin.accounts.upstreamAccountBalance.cleared'))
+      return true
+    } catch (error: any) {
+      appStore.showError(error.message || t('admin.accounts.upstreamAccountBalance.clearFailed'))
+      return false
+    } finally {
+      upstreamAccountBalanceLoading.value = false
+    }
+  }
+  if (!website && !email && !password && !upstreamAccountBalancePasswordConfigured.value) {
+    return true
+  }
+  if (!website || !email) {
+    appStore.showError(t('admin.accounts.upstreamAccountBalance.fieldsRequired'))
+    return false
+  }
+  upstreamAccountBalanceLoading.value = true
+  try {
+    upstreamAccountBalanceState.value = await adminAPI.accounts.saveUpstreamAccountBalance(accountID, {
+      provider: 'new_api',
+      website,
+      email,
+      password,
+      clear_password: false
+    })
+    upstreamAccountBalancePassword.value = ''
+    appStore.showSuccess(t('admin.accounts.upstreamAccountBalance.saved'))
+    return true
+  } catch (error: any) {
+    appStore.showError(error.message || t('admin.accounts.upstreamAccountBalance.saveFailed'))
+    return false
+  } finally {
+    upstreamAccountBalanceLoading.value = false
+  }
+}
+
 const syncFormFromAccount = (newAccount: Account | null) => {
   if (!newAccount) {
+    resetUpstreamAccountBalanceForm()
     return
   }
   // 进入回填窗口：抑制 CN 模式/协议 watcher 联动重置 base_url（见 syncingForm 注释）。
@@ -3626,6 +3855,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     : 'active'
   form.group_ids = newAccount.group_ids || []
   form.expires_at = newAccount.expires_at ?? null
+	void loadUpstreamAccountBalance(newAccount.id)
 
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
@@ -4493,6 +4723,8 @@ const handleClose = () => {
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
+	const balanceSaved = await saveUpstreamAccountBalance(accountID)
+	if (!balanceSaved) return
     const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)

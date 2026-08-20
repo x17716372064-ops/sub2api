@@ -64,6 +64,7 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
+	upstreamAccountBalance  *service.UpstreamAccountBalanceService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -73,6 +74,13 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
+}
+
+// SetUpstreamAccountBalanceService attaches the optional upstream website
+// login balance service. Keeping it as a setter preserves the existing account
+// handler constructor contract for narrow tests and alternate deployments.
+func (h *AccountHandler) SetUpstreamAccountBalanceService(balance *service.UpstreamAccountBalanceService) {
+	h.upstreamAccountBalance = balance
 }
 
 // NewAccountHandler creates a new admin account handler

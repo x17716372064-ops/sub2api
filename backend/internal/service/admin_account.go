@@ -128,6 +128,11 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"drive_storage_limit":                    {},
 	"drive_storage_usage":                    {},
 	"drive_tier_updated_at":                  {},
+	// Managed exclusively by UpstreamAccountBalanceService; do not clone login
+	// credentials or derived snapshots into a duplicate account.
+	UpstreamAccountBalanceConfigExtraKey:   {},
+	UpstreamAccountBalancePasswordExtraKey: {},
+	UpstreamAccountBalanceSnapshotExtraKey: {},
 	// Codex fingerprint convergence uses a per-account random seed, never copied from another account.
 	codexFingerprintSeedExtraKey:           {},
 	"codex_primary_used_percent":           {},
@@ -455,6 +460,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
+	delete(accountExtra, UpstreamAccountBalanceConfigExtraKey)
+	delete(accountExtra, UpstreamAccountBalancePasswordExtraKey)
+	delete(accountExtra, UpstreamAccountBalanceSnapshotExtraKey)
 	accountExtra = prepareCodexFingerprintExtraForCreate(input.Platform, input.Type, accountExtra)
 	account := &Account{
 		Name:        input.Name,
@@ -692,6 +700,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
+		delete(normalizedExtra, UpstreamAccountBalanceConfigExtraKey)
+		delete(normalizedExtra, UpstreamAccountBalancePasswordExtraKey)
+		delete(normalizedExtra, UpstreamAccountBalanceSnapshotExtraKey)
 		// 保留配额用量和专用服务受管字段，防止普通账号编辑意外覆盖。
 		for _, key := range []string{
 			"quota_used",
@@ -706,6 +717,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
+			UpstreamAccountBalanceConfigExtraKey,
+			UpstreamAccountBalancePasswordExtraKey,
+			UpstreamAccountBalanceSnapshotExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -941,6 +955,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	delete(updates, UpstreamAccountBalanceConfigExtraKey)
+	delete(updates, UpstreamAccountBalancePasswordExtraKey)
+	delete(updates, UpstreamAccountBalanceSnapshotExtraKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -970,6 +987,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
+	delete(input.Extra, UpstreamAccountBalanceConfigExtraKey)
+	delete(input.Extra, UpstreamAccountBalancePasswordExtraKey)
+	delete(input.Extra, UpstreamAccountBalanceSnapshotExtraKey)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)

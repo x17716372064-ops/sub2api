@@ -414,6 +414,10 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 			service.OllamaCloudUsageAutoRefreshExtraKey,
 			service.OllamaCloudUsageSnapshotExtraKey:
 			continue
+		case service.UpstreamAccountBalancePasswordExtraKey:
+			// The encrypted website password is write-only and must never be
+			// exposed through account list/detail/export-adjacent DTOs.
+			continue
 		default:
 			redacted[key] = value
 		}

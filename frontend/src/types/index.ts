@@ -1112,6 +1112,36 @@ export interface OllamaCloudUsageSettings {
   debounce_minutes: number
 }
 
+export type UpstreamAccountBalanceStatus = 'ok' | 'failed' | 'unsupported'
+
+export interface UpstreamAccountBalanceConfig {
+  provider: 'new_api' | string
+  website: string
+  email: string
+  configured: boolean
+}
+
+export interface UpstreamAccountBalanceSnapshot {
+  status: UpstreamAccountBalanceStatus
+  balance?: number
+  raw_quota?: number
+  used_quota?: number
+  remaining_quota?: number
+  unit?: string
+  retrieved_at?: string
+  last_attempt_at: string
+  http_status?: number
+  last_error?: string
+}
+
+export interface UpstreamAccountBalanceState {
+  account_id: number
+  configured: boolean
+  password_configured: boolean
+  config?: UpstreamAccountBalanceConfig
+  snapshot?: UpstreamAccountBalanceSnapshot
+}
+
 export interface Account {
   id: number
   name: string

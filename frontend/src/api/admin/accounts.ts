@@ -24,7 +24,8 @@ import type {
   UpstreamBillingProbeResult,
   UpstreamBillingProbeSettings,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  UpstreamAccountBalanceState
 } from '@/types'
 
 /**
@@ -129,6 +130,37 @@ export async function listWithEtag(
  */
 export async function getById(id: number): Promise<Account> {
   const { data } = await apiClient.get<Account>(`/admin/accounts/${id}`)
+  return data
+}
+
+export async function getUpstreamAccountBalance(id: number): Promise<UpstreamAccountBalanceState> {
+  const { data } = await apiClient.get<UpstreamAccountBalanceState>(
+    `/admin/accounts/${id}/upstream-account-balance`
+  )
+  return data
+}
+
+export async function saveUpstreamAccountBalance(
+  id: number,
+  payload: {
+    provider?: string
+    website: string
+    email: string
+    password?: string
+    clear_password?: boolean
+  }
+): Promise<UpstreamAccountBalanceState> {
+  const { data } = await apiClient.put<UpstreamAccountBalanceState>(
+    `/admin/accounts/${id}/upstream-account-balance`,
+    payload
+  )
+  return data
+}
+
+export async function refreshUpstreamAccountBalance(id: number): Promise<UpstreamAccountBalanceState> {
+  const { data } = await apiClient.post<UpstreamAccountBalanceState>(
+    `/admin/accounts/${id}/upstream-account-balance/refresh`
+  )
   return data
 }
 
@@ -1045,7 +1077,10 @@ export const accountsAPI = {
   saveOllamaCloudUsageSession,
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
-  refreshOllamaCloudUsage
+  refreshOllamaCloudUsage,
+  getUpstreamAccountBalance,
+  saveUpstreamAccountBalance,
+  refreshUpstreamAccountBalance
 }
 
 export default accountsAPI
